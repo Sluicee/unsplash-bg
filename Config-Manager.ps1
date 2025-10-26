@@ -96,7 +96,7 @@ function Show-Menu {
 	Write-Host "6. History Settings (Max cache, Keep images)" -ForegroundColor White
 	Write-Host "7. View/Restore History" -ForegroundColor White
 	Write-Host "8. Test Connection" -ForegroundColor White
-	Write-Host "9. Save & Exit" -ForegroundColor White
+	Write-Host "9. Save and Exit" -ForegroundColor White
 	Write-Host "0. Exit without saving" -ForegroundColor Yellow
 	Write-Host ""
 }
