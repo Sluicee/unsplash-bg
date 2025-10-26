@@ -30,7 +30,7 @@ param(
 )
 
 # Load configuration
-$ConfigPath = "$PSScriptRoot\config.json"
+$ConfigPath = "$PSScriptRoot\..\config.json"
 $Config = @{}
 
 if (Test-Path $ConfigPath) {
@@ -53,6 +53,12 @@ $LogFile = if ($Config.logging.logFile) { $Config.logging.logFile } else { "$PSS
 # Create download folder if not exists
 if (!(Test-Path $DownloadPath)) {
 	New-Item -ItemType Directory -Path $DownloadPath -Force | Out-Null
+}
+
+# Create logs folder if not exists
+$LogDir = Split-Path $LogFile -Parent
+if (!(Test-Path $LogDir)) {
+	New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 }
 
 # Logging function
@@ -196,8 +202,8 @@ function Main {
 	
 	# Check configuration
 	if ([string]::IsNullOrEmpty($AccessKey)) {
-		Write-Log "WARNING: AccessKey not configured. Use Config-Fixed.bat to configure."
-		Write-Host "To configure API key run: .\Config-Fixed.bat" -ForegroundColor Yellow
+		Write-Log "WARNING: AccessKey not configured. Use Setup.bat to configure."
+		Write-Host "To configure API key run: .\Setup.bat" -ForegroundColor Yellow
 		return
 	}
 	
