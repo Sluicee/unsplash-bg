@@ -2,12 +2,19 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 
-REM Check if config.json exists
+REM Check if config.json exists, if not, create from template
 if not exist "config.json" (
-    echo Creating config.json from template...
-    copy "config.json.template" "config.json" >nul
-    echo Config file created!
-    echo.
+    if exist "config.json.template" (
+        echo Creating config.json from template...
+        copy "config.json.template" "config.json" >nul
+        echo Config file created successfully!
+        echo.
+    ) else (
+        echo ERROR: config.json.template not found!
+        echo Please ensure config.json.template exists in the project directory.
+        pause
+        exit /b 1
+    )
 )
 
 :menu

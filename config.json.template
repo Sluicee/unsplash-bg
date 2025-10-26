@@ -1,0 +1,37 @@
+{
+	"unsplash": {
+		"accessKey": "",
+		"apiUrl": "https://api.unsplash.com",
+		"defaultCategory": "nature",
+		"defaultWidth": 1920,
+		"defaultHeight": 1080
+	},
+	"download": {
+		"tempPath": "$env:TEMP\\UnsplashBG",
+		"keepImages": false,
+		"maxCacheSize": 10
+	},
+	"wallpaper": {
+		"style": "fill",
+		"position": "center"
+	},
+	"autoChange": {
+		"enabled": false,
+		"intervalMinutes": 30,
+		"runAtStartup": false
+	},
+	"taskScheduler": {
+		"taskName": "UnsplashBackgroundChanger",
+		"enabled": false
+	},
+	"history": {
+		"maxEntries": 50,
+		"keepFiles": true,
+		"historyFile": "history.json"
+	},
+	"logging": {
+		"enabled": true,
+		"logFile": "logs\\unsplash-bg.log",
+		"logLevel": "INFO"
+	}
+}
