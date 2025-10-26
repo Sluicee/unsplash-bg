@@ -6,6 +6,10 @@
 downloads/
 temp/
 
+# Configuration with sensitive data
+config.json
+history.json
+
 # Windows
 Thumbs.db
 ehthumbs.db
@@ -25,3 +29,7 @@ Desktop.ini
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Build artifacts
+bin/
+*.exe

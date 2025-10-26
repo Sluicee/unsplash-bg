@@ -1,18 +1,26 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-echo === Unsplash Background Changer - Simple Configuration ===
+echo === Unsplash Background Changer - Setup ===
 echo.
+
+REM Check if config.json exists
+if not exist "config.json" (
+    echo Creating config.json from template...
+    copy "config.json.template" "config.json" >nul
+    echo Config file created!
+    echo.
+)
+
 echo 1. Set API Key
 echo 2. Set Category  
 echo 3. Set Resolution
 echo 4. Set Wallpaper Style
-echo 5. Enable Auto-change
-echo 6. Test Connection
-echo 7. Save and Exit
-echo 0. Exit without saving
+echo 5. Test Connection
+echo 6. Run Wallpaper Changer
+echo 0. Exit
 echo.
-set /p choice="Choose option (0-7): "
+set /p choice="Choose option (0-6): "
 
 if "%choice%"=="1" (
     echo.
@@ -98,46 +106,16 @@ if "%choice%"=="1" (
     pause
 ) else if "%choice%"=="5" (
     echo.
-    echo Auto-change Settings...
-    set /p auto="Enable auto-change? (y/n): "
-    if "%auto%"=="y" (
-        echo.
-        echo Set interval:
-        echo 1. 15 minutes, 2. 30 minutes, 3. 1 hour, 4. 2 hours
-        echo 5. 6 hours, 6. 12 hours, 7. 24 hours, 8. Custom
-        echo.
-        set /p interval="Choose interval (1-8): "
-        
-        if "%interval%"=="1" set minutes=15
-        if "%interval%"=="2" set minutes=30
-        if "%interval%"=="3" set minutes=60
-        if "%interval%"=="4" set minutes=120
-        if "%interval%"=="5" set minutes=360
-        if "%interval%"=="6" set minutes=720
-        if "%interval%"=="7" set minutes=1440
-        if "%interval%"=="8" (
-            set /p minutes="Enter interval in minutes: "
-        )
-        
-        set /p startup="Run at system startup? (y/n): "
-        
-        powershell.exe -ExecutionPolicy Bypass -Command "$config = Get-Content 'config.json' -Raw | ConvertFrom-Json; $config.autoChange.enabled = $true; $config.autoChange.intervalMinutes = %minutes%; if ('%startup%' -eq 'y') { $config.autoChange.runAtStartup = $true } else { $config.autoChange.runAtStartup = $false }; $config | ConvertTo-Json -Depth 3 | Set-Content 'config.json'"
-        echo Auto-change enabled!
-    ) else (
-        powershell.exe -ExecutionPolicy Bypass -Command "$config = Get-Content 'config.json' -Raw | ConvertFrom-Json; $config.autoChange.enabled = $false; $config | ConvertTo-Json -Depth 3 | Set-Content 'config.json'"
-        echo Auto-change disabled
-    )
-    pause
-) else if "%choice%"=="6" (
-    echo.
     echo Testing connection to Unsplash API...
     powershell.exe -ExecutionPolicy Bypass -Command "try { $config = Get-Content 'config.json' -Raw | ConvertFrom-Json; if ([string]::IsNullOrEmpty($config.unsplash.accessKey)) { Write-Host 'API key not configured!' -ForegroundColor Red } else { $apiUrl = '$($config.unsplash.apiUrl)/photos/random'; $headers = @{'Authorization' = 'Client-ID $($config.unsplash.accessKey)'; 'Accept-Version' = 'v1'}; $response = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method Get; Write-Host 'Connection successful!' -ForegroundColor Green; Write-Host 'Image: $($response.description)' -ForegroundColor White; Write-Host 'Author: $($response.user.name)' -ForegroundColor Gray } } catch { Write-Host 'ERROR: $($_.Exception.Message)' -ForegroundColor Red }"
     pause
-) else if "%choice%"=="7" (
-    echo Configuration saved. Goodbye!
-    exit
+) else if "%choice%"=="6" (
+    echo.
+    echo Running Wallpaper Changer...
+    powershell.exe -ExecutionPolicy Bypass -File "Unsplash-BG.ps1"
+    pause
 ) else if "%choice%"=="0" (
-    echo Exit without saving. Goodbye!
+    echo Goodbye!
     exit
 ) else (
     echo Invalid choice. Try again.

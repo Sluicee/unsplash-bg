@@ -2,152 +2,117 @@
 
 <#
 .SYNOPSIS
-	Unsplash Background Changer - PowerShell скрипт для установки случайных обоев с Unsplash
+	Unsplash Background Changer - Simple Version
 	
 .DESCRIPTION
-	Этот скрипт загружает случайные изображения с Unsplash API и устанавливает их как фон рабочего стола
+	Simple PowerShell script for changing desktop wallpapers with Unsplash images
 	
 .PARAMETER Category
-	Категория изображений для поиска (по умолчанию: nature)
+	Image category for search (default: nature)
 	
 .PARAMETER Width
-	Ширина изображения (по умолчанию: 1920)
+	Image width (default: 1920)
 	
 .PARAMETER Height
-	Высота изображения (по умолчанию: 1080)
-	
-.PARAMETER Schedule
-	Режим автоматической работы (без интерактива)
-	
-.PARAMETER RestoreFromHistory
-	ID изображения из истории для восстановления
-	
-.PARAMETER ShowHistory
-	Показать список истории изображений
+	Image height (default: 1080)
 	
 .EXAMPLE
 	.\Unsplash-BG.ps1
 	
 .EXAMPLE
 	.\Unsplash-BG.ps1 -Category "city" -Width 2560 -Height 1440
-	
-.EXAMPLE
-	.\Unsplash-BG.ps1 -Schedule
-	
-.EXAMPLE
-	.\Unsplash-BG.ps1 -RestoreFromHistory 5
-	
-.EXAMPLE
-	.\Unsplash-BG.ps1 -ShowHistory
 #>
 
 param(
 	[string]$Category = "nature",
 	[int]$Width = 1920,
-	[int]$Height = 1080,
-	[switch]$Schedule,
-	[int]$RestoreFromHistory = -1,
-	[switch]$ShowHistory
+	[int]$Height = 1080
 )
 
-# Загрузка конфигурации
+# Load configuration
 $ConfigPath = "$PSScriptRoot\config.json"
 $Config = @{}
 
 if (Test-Path $ConfigPath) {
 	try {
-		$Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json -AsHashtable
+		$Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 	} catch {
-		Write-Warning "Ошибка загрузки конфигурации: $($_.Exception.Message)"
-		$Config = @{}
+		Write-Warning "Error loading configuration: $($_.Exception.Message)"
 	}
 }
 
-# Установка значений по умолчанию
-$Config.UnsplashAPI = $Config.unsplash.apiUrl ?? "https://api.unsplash.com"
-$Config.AccessKey = $Config.unsplash.accessKey ?? ""
-$Config.DownloadPath = if ($Config.download.tempPath) { 
+# Set default values
+$AccessKey = if ($Config.unsplash.accessKey) { $Config.unsplash.accessKey } else { "" }
+$DownloadPath = if ($Config.download.tempPath) { 
 	$Config.download.tempPath -replace '\$env:TEMP', $env:TEMP 
 } else { 
 	"$env:TEMP\UnsplashBG" 
 }
-$Config.LogFile = $Config.logging.logFile ?? "$PSScriptRoot\unsplash-bg.log"
-$Config.HistoryFile = $Config.history.historyFile ?? "$PSScriptRoot\history.json"
+$LogFile = if ($Config.logging.logFile) { $Config.logging.logFile } else { "$PSScriptRoot\unsplash-bg.log" }
 
-# Создаем папку для загрузок если не существует
-if (!(Test-Path $Config.DownloadPath)) {
-	New-Item -ItemType Directory -Path $Config.DownloadPath -Force | Out-Null
+# Create download folder if not exists
+if (!(Test-Path $DownloadPath)) {
+	New-Item -ItemType Directory -Path $DownloadPath -Force | Out-Null
 }
 
-# Функция логирования
+# Logging function
 function Write-Log {
 	param([string]$Message)
 	$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 	$logEntry = "[$timestamp] $Message"
 	Write-Host $logEntry
-	Add-Content -Path $Config.LogFile -Value $logEntry
+	Add-Content -Path $LogFile -Value $logEntry
 }
 
-# Функция получения случайного изображения
+# Get random image function
 function Get-RandomImage {
 	param([string]$Category, [int]$Width, [int]$Height)
 	
 	try {
-		Write-Log "Запрос случайного изображения: Category=$Category, Size=${Width}x${Height}"
+		Write-Log "Requesting random image: Category=$Category, Size=${Width}x${Height}"
 		
-		if ([string]::IsNullOrEmpty($Config.AccessKey)) {
-			Write-Log "ОШИБКА: API ключ не настроен. Используйте Config.exe для настройки."
+		if ([string]::IsNullOrEmpty($AccessKey)) {
+			Write-Log "ERROR: API key not configured. Use Config-Fixed.bat to configure."
 			return $null
 		}
 		
-		# Формируем URL для запроса
-		$apiUrl = "$($Config.UnsplashAPI)/photos/random"
-		$queryParams = @{
-			query = $Category
-			orientation = "landscape"
-			w = $Width
-			h = $Height
-		}
+		# Build API URL
+		$apiUrl = "https://api.unsplash.com/photos/random"
+		$url = "${apiUrl}?query=${Category}&orientation=landscape&w=${Width}&h=${Height}"
 		
-		$url = $apiUrl + "?" + (($queryParams.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join "&")
-		
-		# Заголовки для API
+		# API headers
 		$headers = @{
-			"Authorization" = "Client-ID $($Config.AccessKey)"
+			"Authorization" = "Client-ID $AccessKey"
 			"Accept-Version" = "v1"
 		}
 		
-		Write-Log "Отправка запроса к Unsplash API..."
+		Write-Log "Sending request to Unsplash API..."
 		$response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
 		
 		if ($response -and $response.urls) {
-			# Получаем URL изображения нужного размера
+			# Get image URL
 			$imageUrl = $response.urls.raw
 			$imageId = $response.id
-			$imageDescription = $response.description ?? $response.alt_description ?? "Unsplash Image"
+			$imageDescription = if ($response.description) { $response.description } elseif ($response.alt_description) { $response.alt_description } else { "Unsplash Image" }
 			
-			Write-Log "Получено изображение: $imageDescription (ID: $imageId)"
+			Write-Log "Received image: $imageDescription (ID: $imageId)"
 			
-			# Загружаем изображение
+			# Download image
 			$fileName = "unsplash_${imageId}_${Width}x${Height}.jpg"
-			$filePath = Join-Path $Config.DownloadPath $fileName
+			$filePath = Join-Path $DownloadPath $fileName
 			
-			Write-Log "Загрузка изображения: $imageUrl"
+			Write-Log "Downloading image: $imageUrl"
 			Invoke-WebRequest -Uri $imageUrl -OutFile $filePath -UseBasicParsing
 			
 			if (Test-Path $filePath) {
-				Write-Log "Изображение загружено: $filePath"
-				
-				# Сохраняем в историю
-				Save-WallpaperHistory -ImagePath $filePath -ImageUrl $imageUrl -Category $Category -ImageId $imageId -Description $imageDescription
-				
+				Write-Log "Image downloaded: $filePath"
 				return $filePath
 			} else {
-				Write-Log "ОШИБКА: Не удалось загрузить изображение"
+				Write-Log "ERROR: Failed to download image"
 				return $null
 			}
 		} else {
-			Write-Log "ОШИБКА: Неверный ответ от API"
+			Write-Log "ERROR: Invalid API response"
 			return $null
 		}
 	}
@@ -155,34 +120,34 @@ function Get-RandomImage {
 		if ($_.Exception.Response) {
 			$statusCode = $_.Exception.Response.StatusCode.value__
 			switch ($statusCode) {
-				401 { Write-Log "ОШИБКА: Неверный API ключ (401)" }
-				403 { Write-Log "ОШИБКА: Доступ запрещен (403)" }
-				429 { Write-Log "ОШИБКА: Превышен лимит запросов (429)" }
-				default { Write-Log "ОШИБКА: HTTP $statusCode" }
+				401 { Write-Log "ERROR: Invalid API key (401)" }
+				403 { Write-Log "ERROR: Access denied (403)" }
+				429 { Write-Log "ERROR: Rate limit exceeded (429)" }
+				default { Write-Log "ERROR: HTTP $statusCode" }
 			}
 		} else {
-			Write-Log "ОШИБКА: $($_.Exception.Message)"
+			Write-Log "ERROR: $($_.Exception.Message)"
 		}
 		return $null
 	}
 }
 
-# Функция установки обоев
+# Set wallpaper function
 function Set-Wallpaper {
 	param([string]$ImagePath)
 	
 	try {
-		Write-Log "Установка обоев: $ImagePath"
+		Write-Log "Setting wallpaper: $ImagePath"
 		
 		if (!(Test-Path $ImagePath)) {
-			Write-Log "ОШИБКА: Файл изображения не найден: $ImagePath"
+			Write-Log "ERROR: Image file not found: $ImagePath"
 			return $false
 		}
 		
-		# Получаем стиль обоев из конфига
-		$wallpaperStyle = $Config.wallpaper.style ?? "fill"
+		# Get wallpaper style from config
+		$wallpaperStyle = if ($Config.wallpaper.style) { $Config.wallpaper.style } else { "fill" }
 		
-		# Добавляем тип для SystemParametersInfo
+		# Add type for SystemParametersInfo
 		Add-Type -TypeDefinition @"
 			using System;
 			using System.Runtime.InteropServices;
@@ -192,11 +157,11 @@ function Set-Wallpaper {
 			}
 "@
 		
-		# Устанавливаем обои
+		# Set wallpaper
 		$result = [Wallpaper]::SystemParametersInfo(0x0014, 0, $ImagePath, 0x01)
 		
 		if ($result -eq 1) {
-			# Обновляем реестр для стиля обоев
+			# Update registry for wallpaper style
 			$styleValue = switch ($wallpaperStyle.ToLower()) {
 				"fill" { 10 }
 				"fit" { 6 }
@@ -209,187 +174,52 @@ function Set-Wallpaper {
 			Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "WallpaperStyle" -Value $styleValue -Force
 			Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "TileWallpaper" -Value 0 -Force
 			
-			# Обновляем рабочий стол
+			# Update desktop
 			[Wallpaper]::SystemParametersInfo(0x0014, 0, $ImagePath, 0x01)
 			
-			Write-Log "Обои успешно установлены (стиль: $wallpaperStyle)"
+			Write-Log "Wallpaper set successfully (style: $wallpaperStyle)"
 			return $true
 		} else {
-			Write-Log "ОШИБКА: Не удалось установить обои"
+			Write-Log "ERROR: Failed to set wallpaper"
 			return $false
 		}
 	}
 	catch {
-		Write-Log "ОШИБКА при установке обоев: $($_.Exception.Message)"
+		Write-Log "ERROR setting wallpaper: $($_.Exception.Message)"
 		return $false
 	}
 }
 
-# Функция сохранения в историю
-function Save-WallpaperHistory {
-	param(
-		[string]$ImagePath,
-		[string]$ImageUrl,
-		[string]$Category,
-		[string]$ImageId,
-		[string]$Description
-	)
-	
-	try {
-		$history = @()
-		
-		# Загружаем существующую историю
-		if (Test-Path $Config.HistoryFile) {
-			$history = Get-Content $Config.HistoryFile -Raw | ConvertFrom-Json
-		}
-		
-		# Добавляем новую запись
-		$newEntry = @{
-			id = [DateTime]::Now.Ticks
-			date = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-			imagePath = $ImagePath
-			imageUrl = $ImageUrl
-			category = $Category
-			imageId = $ImageId
-			description = $Description
-		}
-		
-		$history += $newEntry
-		
-		# Ограничиваем размер истории
-		$maxEntries = $Config.history.maxEntries ?? 50
-		if ($history.Count -gt $maxEntries) {
-			$history = $history | Select-Object -Last $maxEntries
-		}
-		
-		# Сохраняем историю
-		$history | ConvertTo-Json -Depth 3 | Set-Content $Config.HistoryFile
-		
-		Write-Log "Изображение добавлено в историю (ID: $($newEntry.id))"
-	}
-	catch {
-		Write-Log "ОШИБКА при сохранении в историю: $($_.Exception.Message)"
-	}
-}
-
-# Функция получения истории
-function Get-WallpaperHistory {
-	param([int]$Limit = 10)
-	
-	try {
-		if (Test-Path $Config.HistoryFile) {
-			$history = Get-Content $Config.HistoryFile -Raw | ConvertFrom-Json
-			return $history | Select-Object -Last $Limit | Sort-Object date -Descending
-		}
-		return @()
-	}
-	catch {
-		Write-Log "ОШИБКА при чтении истории: $($_.Exception.Message)"
-		return @()
-	}
-}
-
-# Функция восстановления из истории
-function Restore-FromHistory {
-	param([long]$HistoryId)
-	
-	try {
-		$history = Get-WallpaperHistory -Limit 1000
-		$entry = $history | Where-Object { $_.id -eq $HistoryId }
-		
-		if ($entry) {
-			if (Test-Path $entry.imagePath) {
-				Write-Log "Восстановление обоев из истории: $($entry.description)"
-				return Set-Wallpaper -ImagePath $entry.imagePath
-			} else {
-				Write-Log "ОШИБКА: Файл изображения не найден: $($entry.imagePath)"
-				return $false
-			}
-		} else {
-			Write-Log "ОШИБКА: Запись с ID $HistoryId не найдена в истории"
-			return $false
-		}
-	}
-	catch {
-		Write-Log "ОШИБКА при восстановлении из истории: $($_.Exception.Message)"
-		return $false
-	}
-}
-
-# Функция показа истории
-function Show-History {
-	$history = Get-WallpaperHistory -Limit 20
-	
-	if ($history.Count -eq 0) {
-		Write-Host "История пуста" -ForegroundColor Yellow
-		return
-	}
-	
-	Write-Host "`n=== История обоев ===" -ForegroundColor Cyan
-	Write-Host "ID`tДата`t`t`tКатегория`tОписание" -ForegroundColor Gray
-	Write-Host ("-" * 80) -ForegroundColor Gray
-	
-	foreach ($entry in $history) {
-		$description = if ($entry.description.Length -gt 30) { 
-			$entry.description.Substring(0, 30) + "..." 
-		} else { 
-			$entry.description 
-		}
-		Write-Host "$($entry.id)`t$($entry.date)`t$($entry.category)`t$description" -ForegroundColor White
-	}
-	Write-Host ""
-}
-
-# Основная логика
+# Main logic
 function Main {
-	Write-Log "Запуск Unsplash Background Changer"
+	Write-Log "Starting Unsplash Background Changer"
 	
-	# Обработка специальных режимов
-	if ($ShowHistory) {
-		Show-History
+	# Check configuration
+	if ([string]::IsNullOrEmpty($AccessKey)) {
+		Write-Log "WARNING: AccessKey not configured. Use Config-Fixed.bat to configure."
+		Write-Host "To configure API key run: .\Config-Fixed.bat" -ForegroundColor Yellow
 		return
 	}
 	
-	if ($RestoreFromHistory -gt 0) {
-		$success = Restore-FromHistory -HistoryId $RestoreFromHistory
-		if ($success) {
-			Write-Log "Обои восстановлены из истории"
-		} else {
-			Write-Log "Не удалось восстановить обои из истории"
-		}
-		return
-	}
-	
-	# Проверяем конфигурацию
-	if ([string]::IsNullOrEmpty($Config.AccessKey)) {
-		Write-Log "ВНИМАНИЕ: AccessKey не настроен. Используйте Config.exe для настройки."
-		if (!$Schedule) {
-			Write-Host "Для настройки API ключа запустите: .\Config-Manager.ps1" -ForegroundColor Yellow
-		}
-		return
-	}
-	
-	# Получаем случайное изображение
+	# Get random image
 	$imagePath = Get-RandomImage -Category $Category -Width $Width -Height $Height
 	
 	if ($imagePath -and (Test-Path $imagePath)) {
-		# Устанавливаем обои
+		# Set wallpaper
 		$success = Set-Wallpaper -ImagePath $imagePath
 		
 		if ($success) {
-			Write-Log "Обои успешно установлены"
-			if (!$Schedule) {
-				Write-Host "Обои обновлены!" -ForegroundColor Green
-			}
+			Write-Log "Wallpaper set successfully"
+			Write-Host "Wallpaper updated!" -ForegroundColor Green
 		} else {
-			Write-Log "Не удалось установить обои"
+			Write-Log "Failed to set wallpaper"
 		}
 	} else {
-		Write-Log "Не удалось получить изображение"
+		Write-Log "Failed to get image"
 	}
 	
-	Write-Log "Завершение работы"
+	Write-Log "Finished"
 }
 
-# Запуск основной функции
+# Run main function
 Main
