@@ -1,6 +1,7 @@
 # PowerShell
 *.log
 *.tmp
+logs/
 
 # Unsplash downloads
 downloads/
