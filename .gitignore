@@ -3,9 +3,14 @@
 *.tmp
 logs/
 
-# Unsplash downloads
+# Unsplash downloads / cache (Windows $env:TEMP\UnsplashBG or in-repo)
 downloads/
 temp/
+UnsplashBG/
+$env:TEMP/
+*UnsplashBG*/
+$env:TEMP*
+**/unsplash_*.jpg
 
 # Configuration with sensitive data
 config.json
