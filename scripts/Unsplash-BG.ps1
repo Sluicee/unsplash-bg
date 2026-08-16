@@ -3,35 +3,41 @@
 <#
 .SYNOPSIS
 	Unsplash Background Changer - Simple Version
-	
+
 .DESCRIPTION
-	Simple PowerShell script for changing desktop wallpapers with Unsplash images
-	
+	Simple PowerShell script for changing desktop wallpapers with Unsplash images.
+	Values not passed as parameters are taken from config.json.
+
 .PARAMETER Category
-	Image category for search (default: nature)
-	
+	Image category for search (default: config.json unsplash.defaultCategory, or "nature")
+
 .PARAMETER Width
-	Image width (default: 1920)
-	
+	Image width (default: config.json unsplash.defaultWidth, or 1920)
+
 .PARAMETER Height
-	Image height (default: 1080)
-	
+	Image height (default: config.json unsplash.defaultHeight, or 1080)
+
+.PARAMETER Schedule
+	Non-interactive mode: log only, no console messages. Used by the scheduled task.
+
 .EXAMPLE
 	.\Unsplash-BG.ps1
-	
+
 .EXAMPLE
 	.\Unsplash-BG.ps1 -Category "city" -Width 2560 -Height 1440
 #>
 
 param(
-	[string]$Category = "nature",
-	[int]$Width = 1920,
-	[int]$Height = 1080
+	[string]$Category,
+	[int]$Width,
+	[int]$Height,
+	[switch]$Schedule
 )
 
 # Load configuration
-$ConfigPath = "$PSScriptRoot\..\config.json"
-$Config = @{}
+$RootPath = Split-Path $PSScriptRoot -Parent
+$ConfigPath = Join-Path $RootPath "config.json"
+$Config = $null
 
 if (Test-Path $ConfigPath) {
 	try {
@@ -41,14 +47,34 @@ if (Test-Path $ConfigPath) {
 	}
 }
 
-# Set default values
-$AccessKey = if ($Config.unsplash.accessKey) { $Config.unsplash.accessKey } else { "" }
-$DownloadPath = if ($Config.download.tempPath) { 
-	$Config.download.tempPath -replace '\$env:TEMP', $env:TEMP 
-} else { 
-	"$env:TEMP\UnsplashBG" 
+# Resolves a config path: relative values are based on the project root, not the
+# current directory, so the scheduled task writes to the same place as a manual run.
+function Resolve-ConfigPath {
+	param([string]$Path, [string]$Default)
+
+	if ([string]::IsNullOrWhiteSpace($Path)) { $Path = $Default }
+	$Path = $Path -replace '\$env:TEMP', $env:TEMP
+	$Path = [Environment]::ExpandEnvironmentVariables($Path)
+	if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+	return Join-Path $RootPath $Path
 }
-$LogFile = if ($Config.logging.logFile) { $Config.logging.logFile } else { "$PSScriptRoot\unsplash-bg.log" }
+
+# Set default values (parameters win over config, config wins over hardcoded defaults)
+$AccessKey = if ($Config.unsplash.accessKey) { $Config.unsplash.accessKey } else { "" }
+$ApiUrl = if ($Config.unsplash.apiUrl) { $Config.unsplash.apiUrl } else { "https://api.unsplash.com" }
+if (-not $PSBoundParameters.ContainsKey('Category')) {
+	$Category = if ($Config.unsplash.defaultCategory) { $Config.unsplash.defaultCategory } else { "nature" }
+}
+if (-not $PSBoundParameters.ContainsKey('Width')) {
+	$Width = if ($Config.unsplash.defaultWidth -gt 0) { [int]$Config.unsplash.defaultWidth } else { 1920 }
+}
+if (-not $PSBoundParameters.ContainsKey('Height')) {
+	$Height = if ($Config.unsplash.defaultHeight -gt 0) { [int]$Config.unsplash.defaultHeight } else { 1080 }
+}
+$DownloadPath = Resolve-ConfigPath -Path $Config.download.tempPath -Default "$env:TEMP\UnsplashBG"
+$LogFile = Resolve-ConfigPath -Path $Config.logging.logFile -Default "logs\unsplash-bg.log"
+$KeepImages = [bool]$Config.download.keepImages
+$MaxCacheSize = if ($Config.download.maxCacheSize -gt 0) { [int]$Config.download.maxCacheSize } else { 10 }
 
 # Create download folder if not exists
 if (!(Test-Path $DownloadPath)) {
@@ -66,50 +92,44 @@ function Write-Log {
 	param([string]$Message)
 	$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 	$logEntry = "[$timestamp] $Message"
-	Write-Host $logEntry
+	if (-not $Schedule) { Write-Host $logEntry }
 	Add-Content -Path $LogFile -Value $logEntry
 }
 
 # Get random image function
 function Get-RandomImage {
 	param([string]$Category, [int]$Width, [int]$Height)
-	
+
 	try {
 		Write-Log "Requesting random image: Category=$Category, Size=${Width}x${Height}"
-		
-		if ([string]::IsNullOrEmpty($AccessKey)) {
-			Write-Log "ERROR: API key not configured. Use Config-Fixed.bat to configure."
-			return $null
-		}
-		
+
 		# Build API URL
-		$apiUrl = "https://api.unsplash.com/photos/random"
-		$url = "${apiUrl}?query=${Category}&orientation=landscape&w=${Width}&h=${Height}"
-		
+		$url = "$($ApiUrl.TrimEnd('/'))/photos/random?query=${Category}&orientation=landscape"
+
 		# API headers
 		$headers = @{
 			"Authorization" = "Client-ID $AccessKey"
 			"Accept-Version" = "v1"
 		}
-		
+
 		Write-Log "Sending request to Unsplash API..."
 		$response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
-		
+
 		if ($response -and $response.urls) {
-			# Get image URL
-			$imageUrl = $response.urls.raw
+			# urls.raw is the full-size original; imgix parameters do the actual resizing
+			$imageUrl = "$($response.urls.raw)&w=${Width}&h=${Height}&fit=crop&fm=jpg&q=85"
 			$imageId = $response.id
 			$imageDescription = if ($response.description) { $response.description } elseif ($response.alt_description) { $response.alt_description } else { "Unsplash Image" }
-			
-			Write-Log "Received image: $imageDescription (ID: $imageId)"
-			
+
+			Write-Log "Received image: $imageDescription (ID: $imageId, author: $($response.user.name))"
+
 			# Download image
 			$fileName = "unsplash_${imageId}_${Width}x${Height}.jpg"
 			$filePath = Join-Path $DownloadPath $fileName
-			
+
 			Write-Log "Downloading image: $imageUrl"
 			Invoke-WebRequest -Uri $imageUrl -OutFile $filePath -UseBasicParsing
-			
+
 			if (Test-Path $filePath) {
 				Write-Log "Image downloaded: $filePath"
 				return $filePath
@@ -138,51 +158,69 @@ function Get-RandomImage {
 	}
 }
 
+# Remove old cached images. The current wallpaper file must stay on disk:
+# Windows keeps referencing it by path.
+function Remove-OldImages {
+	param([string]$CurrentImage)
+
+	try {
+		$keep = if ($KeepImages) { $MaxCacheSize } else { 1 }
+		Get-ChildItem -Path $DownloadPath -Filter "unsplash_*.jpg" -File -ErrorAction Stop |
+			Sort-Object LastWriteTime -Descending |
+			Select-Object -Skip $keep |
+			Where-Object { $_.FullName -ne $CurrentImage } |
+			Remove-Item -Force -ErrorAction SilentlyContinue
+	}
+	catch {
+		Write-Log "WARNING: Cache cleanup failed: $($_.Exception.Message)"
+	}
+}
+
 # Set wallpaper function
 function Set-Wallpaper {
 	param([string]$ImagePath)
-	
+
 	try {
 		Write-Log "Setting wallpaper: $ImagePath"
-		
+
 		if (!(Test-Path $ImagePath)) {
 			Write-Log "ERROR: Image file not found: $ImagePath"
 			return $false
 		}
-		
+
 		# Get wallpaper style from config
 		$wallpaperStyle = if ($Config.wallpaper.style) { $Config.wallpaper.style } else { "fill" }
-		
-		# Add type for SystemParametersInfo
-		Add-Type -TypeDefinition @"
-			using System;
-			using System.Runtime.InteropServices;
-			public class Wallpaper {
-				[DllImport("user32.dll", CharSet=CharSet.Auto)]
-				public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
-			}
+
+		# Add type for SystemParametersInfo (only once per session)
+		if (-not ('Wallpaper' -as [type])) {
+			Add-Type -TypeDefinition @"
+				using System;
+				using System.Runtime.InteropServices;
+				public class Wallpaper {
+					[DllImport("user32.dll", CharSet=CharSet.Auto)]
+					public static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
+				}
 "@
-		
-		# Set wallpaper
+		}
+
+		# Update registry for wallpaper style before applying the image
+		$styleValue = switch ($wallpaperStyle.ToLower()) {
+			"fill" { 10 }
+			"fit" { 6 }
+			"stretch" { 2 }
+			"center" { 0 }
+			"tile" { 0 }
+			default { 10 }
+		}
+		$tileValue = if ($wallpaperStyle.ToLower() -eq "tile") { 1 } else { 0 }
+
+		Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "WallpaperStyle" -Value $styleValue -Force
+		Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "TileWallpaper" -Value $tileValue -Force
+
+		# SPI_SETDESKWALLPAPER = 0x0014, SPIF_UPDATEINIFILE = 0x01
 		$result = [Wallpaper]::SystemParametersInfo(0x0014, 0, $ImagePath, 0x01)
-		
+
 		if ($result -eq 1) {
-			# Update registry for wallpaper style
-			$styleValue = switch ($wallpaperStyle.ToLower()) {
-				"fill" { 10 }
-				"fit" { 6 }
-				"stretch" { 2 }
-				"center" { 0 }
-				"tile" { 1 }
-				default { 10 }
-			}
-			
-			Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "WallpaperStyle" -Value $styleValue -Force
-			Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "TileWallpaper" -Value 0 -Force
-			
-			# Update desktop
-			[Wallpaper]::SystemParametersInfo(0x0014, 0, $ImagePath, 0x01)
-			
 			Write-Log "Wallpaper set successfully (style: $wallpaperStyle)"
 			return $true
 		} else {
@@ -199,32 +237,41 @@ function Set-Wallpaper {
 # Main logic
 function Main {
 	Write-Log "Starting Unsplash Background Changer"
-	
+
 	# Check configuration
-	if ([string]::IsNullOrEmpty($AccessKey)) {
-		Write-Log "WARNING: AccessKey not configured. Use Setup.bat to configure."
-		Write-Host "To configure API key run: .\Setup.bat" -ForegroundColor Yellow
-		return
+	if ([string]::IsNullOrWhiteSpace($AccessKey)) {
+		Write-Log "ERROR: AccessKey not configured. Use Setup.bat to configure."
+		if (-not $Schedule) {
+			Write-Host "To configure API key run: .\Setup.bat" -ForegroundColor Yellow
+		}
+		exit 1
 	}
-	
+
+	# TLS 1.2 for older Windows defaults
+	[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+	$ProgressPreference = 'SilentlyContinue'
+
 	# Get random image
 	$imagePath = Get-RandomImage -Category $Category -Width $Width -Height $Height
-	
+
 	if ($imagePath -and (Test-Path $imagePath)) {
 		# Set wallpaper
 		$success = Set-Wallpaper -ImagePath $imagePath
-		
+
 		if ($success) {
-			Write-Log "Wallpaper set successfully"
-			Write-Host "Wallpaper updated!" -ForegroundColor Green
+			Remove-OldImages -CurrentImage $imagePath
+			if (-not $Schedule) {
+				Write-Host "Wallpaper updated!" -ForegroundColor Green
+			}
+			Write-Log "Finished"
 		} else {
 			Write-Log "Failed to set wallpaper"
+			exit 1
 		}
 	} else {
 		Write-Log "Failed to get image"
+		exit 1
 	}
-	
-	Write-Log "Finished"
 }
 
 # Run main function

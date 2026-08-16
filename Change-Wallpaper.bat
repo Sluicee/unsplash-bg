@@ -18,4 +18,9 @@ if not exist "config.json" (
 )
 
 echo Changing wallpaper...
-powershell.exe -ExecutionPolicy Bypass -File "scripts\Unsplash-BG.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Unsplash-BG.ps1"
+if errorlevel 1 (
+    echo.
+    echo Failed - see logs\unsplash-bg.log
+    pause
+)

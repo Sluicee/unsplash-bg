@@ -12,26 +12,16 @@
 		"maxCacheSize": 10
 	},
 	"wallpaper": {
-		"style": "fill",
-		"position": "center"
+		"style": "fill"
 	},
 	"autoChange": {
 		"enabled": false,
-		"intervalMinutes": 30,
-		"runAtStartup": false
+		"intervalMinutes": 30
 	},
 	"taskScheduler": {
-		"taskName": "UnsplashBackgroundChanger",
-		"enabled": false
-	},
-	"history": {
-		"maxEntries": 50,
-		"keepFiles": true,
-		"historyFile": "history.json"
+		"taskName": "UnsplashBackgroundChanger"
 	},
 	"logging": {
-		"enabled": true,
-		"logFile": "logs\\unsplash-bg.log",
-		"logLevel": "INFO"
+		"logFile": "logs\\unsplash-bg.log"
 	}
 }

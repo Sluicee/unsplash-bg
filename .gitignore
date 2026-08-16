@@ -1,25 +1,23 @@
-# PowerShell
+# Logs
 *.log
 *.tmp
 logs/
 
-# Unsplash downloads / cache (Windows $env:TEMP\UnsplashBG or in-repo)
+# Unsplash downloads / cache
 downloads/
 temp/
 UnsplashBG/
-$env:TEMP/
 *UnsplashBG*/
-$env:TEMP*
 **/unsplash_*.jpg
 
-# Configuration with sensitive data
+# Configuration with sensitive data (API key)
 config.json
-history.json
 
 # Windows
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+*.lnk
 
 # IDE
 .vscode/

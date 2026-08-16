@@ -14,4 +14,5 @@ if [[ ! -f "config.json" ]]; then
 fi
 
 echo "Changing wallpaper..."
-exec ./scripts/unsplash-bg.sh
+# Invoked through bash so a missing executable bit (fresh clone) is not fatal
+exec /bin/bash "./scripts/unsplash-bg.sh"
