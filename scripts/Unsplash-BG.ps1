@@ -240,7 +240,7 @@ function Main {
 
 	# Check configuration
 	if ([string]::IsNullOrWhiteSpace($AccessKey)) {
-		Write-Log "ERROR: AccessKey not configured. Use Setup.bat to configure."
+		Write-Log "ERROR: API key not configured. Use Setup.bat to configure."
 		if (-not $Schedule) {
 			Write-Host "To configure API key run: .\Setup.bat" -ForegroundColor Yellow
 		}

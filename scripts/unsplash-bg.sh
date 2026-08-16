@@ -93,6 +93,12 @@ is_positive_int() {
 	[[ "$1" =~ ^[1-9][0-9]*$ ]]
 }
 
+# A JSON parser is mandatory: it reads both config.json and the API response
+if ! command -v jq &>/dev/null && ! command -v python3 &>/dev/null; then
+	log "ERROR: neither jq nor python3 is installed - cannot read config.json or the API response."
+	exit 1
+fi
+
 # Load config if present
 if [[ -f "$CONFIG_PATH" ]]; then
 	ACCESS_KEY=$(json_get_file '.unsplash.accessKey' "$CONFIG_PATH")
@@ -127,15 +133,13 @@ if [[ -f "$CONFIG_PATH" ]]; then
 		LOG_DIR="$(dirname "$LOG_FILE")"
 	fi
 	[[ -n "$API_URL" ]] || API_URL="https://api.unsplash.com"
+	API_URL="${API_URL%/}"
 	[[ -n "$CATEGORY" ]] || CATEGORY="nature"
 	is_positive_int "$WIDTH" || WIDTH=1920
 	is_positive_int "$HEIGHT" || HEIGHT=1080
 	[[ -n "$STYLE" ]] || STYLE="fill"
 	[[ "$KEEP_IMAGES" == "true" ]] || KEEP_IMAGES="false"
 	is_positive_int "$MAX_CACHE_SIZE" || MAX_CACHE_SIZE=10
-	if ! command -v jq &>/dev/null && ! command -v python3 &>/dev/null; then
-		log "WARNING: jq and python3 are not installed. Using defaults. Install jq or python3 for config support."
-	fi
 else
 	log "WARNING: config.json not found at $CONFIG_PATH. Using defaults."
 fi
@@ -214,8 +218,10 @@ find_qdbus() {
 	return 1
 }
 
-set_wallpaper_gnome() {
-	local abs="$1" style="$2"
+# $3 is the GSettings schema: Cinnamon mirrors the GNOME keys under its own
+# schema, and writing the GNOME one there changes nothing.
+set_wallpaper_gsettings() {
+	local abs="$1" style="$2" schema="${3:-org.gnome.desktop.background}"
 	local option
 	case "$style" in
 		fill) option="zoom" ;;
@@ -225,10 +231,10 @@ set_wallpaper_gnome() {
 		tile) option="wallpaper" ;;
 		*) option="zoom" ;;
 	esac
-	gsettings set org.gnome.desktop.background picture-uri "file://$abs" || return 1
-	# picture-uri-dark only exists on GNOME 42+; ignore failures on older versions
-	gsettings set org.gnome.desktop.background picture-uri-dark "file://$abs" 2>/dev/null || true
-	gsettings set org.gnome.desktop.background picture-options "$option" 2>/dev/null || true
+	gsettings set "$schema" picture-uri "file://$abs" 2>/dev/null || return 1
+	# picture-uri-dark only exists on GNOME 42+; ignore failures elsewhere
+	gsettings set "$schema" picture-uri-dark "file://$abs" 2>/dev/null || true
+	gsettings set "$schema" picture-options "$option" 2>/dev/null || true
 	return 0
 }
 
@@ -286,8 +292,14 @@ set_wallpaper() {
 			set_wallpaper_plasma "$abs" "$style" && return 0
 			log "WARNING: Plasma detected but no working setter (install qdbus6 or plasma-apply-wallpaperimage). Trying fallbacks."
 			;;
-		*[Gg][Nn][Oo][Mm][Ee]*|*[Uu]nity*|*[Cc]innamon*)
-			if command -v gsettings &>/dev/null && set_wallpaper_gnome "$abs" "$style"; then
+		*[Cc]innamon*)
+			if command -v gsettings &>/dev/null && set_wallpaper_gsettings "$abs" "$style" org.cinnamon.desktop.background; then
+				log "Wallpaper set (Cinnamon)"
+				return 0
+			fi
+			;;
+		*[Gg][Nn][Oo][Mm][Ee]*|*[Uu]nity*)
+			if command -v gsettings &>/dev/null && set_wallpaper_gsettings "$abs" "$style"; then
 				log "Wallpaper set (GNOME)"
 				return 0
 			fi

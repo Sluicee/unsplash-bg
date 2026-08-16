@@ -5,7 +5,7 @@
 ## Возможности
 
 - 🖼️ Загрузка случайных изображений через Unsplash API (категория, размер, ориентация landscape)
-- 🎨 Установка обоев: Windows, KDE Plasma, GNOME, XFCE, Sway, а также feh/nitrogen для тайловых WM
+- 🎨 Установка обоев: Windows, KDE Plasma, GNOME, Cinnamon, XFCE, Sway, а также feh/nitrogen для тайловых WM
 - ⚙️ Консольный конфигуратор для Windows (`Setup.bat`)
 - ⏰ Автозапуск: планировщик заданий Windows / autostart-файл сессии Linux
 - 🧹 Автоочистка кэша скачанных изображений
@@ -16,7 +16,7 @@
 | | Windows | Linux |
 |---|---|---|
 | Обязательно | Windows 10/11, PowerShell 5.1+ | `bash`, `curl`, `jq` (или `python3`) |
-| Установка обоев | — (встроено) | KDE: `qdbus6` либо `plasma-apply-wallpaperimage`<br>GNOME: `gsettings`<br>XFCE: `xfconf-query`<br>Sway: `swaymsg`<br>Прочие WM: `feh` или `nitrogen` |
+| Установка обоев | — (встроено) | KDE: `qdbus6` либо `plasma-apply-wallpaperimage`<br>GNOME / Cinnamon: `gsettings`<br>XFCE: `xfconf-query`<br>Sway: `swaymsg`<br>Прочие WM: `feh` или `nitrogen` |
 | Общее | Доступ в интернет + Access Key Unsplash | |
 
 Права администратора **не нужны** — обои и задача планировщика создаются в контексте текущего пользователя.
@@ -113,7 +113,7 @@ $EDITOR config.json      # unsplash.accessKey
 
 ### Стили обоев
 
-| Стиль | Windows | KDE | GNOME | feh |
+| Стиль | Windows | KDE | GNOME / Cinnamon | feh |
 |---|---|---|---|---|
 | `fill` | Заполнить (обрезка) | Keep Proportions Crop | `zoom` | `--bg-fill` |
 | `fit` | Вписать | Keep Proportions | `scaled` | `--bg-max` |
@@ -219,7 +219,7 @@ systemctl --user enable --now unsplash-bg.timer
 | Linux: `WARNING: Plasma detected but no working setter` | Установите `qdbus6` (пакет `qt6-tools`) или `plasma-apply-wallpaperimage` (`plasma-workspace`) |
 | Linux: `No supported wallpaper setter found` | Окружение не распознано — установите `feh` |
 | Linux: обои не меняются при входе в сессию | Увеличьте задержку: `UNSPLASH_BG_DELAY=15 ./install-autostart.sh` |
-| Linux: config игнорируется | Не установлен ни `jq`, ни `python3` — скрипт пишет об этом в лог и работает на значениях по умолчанию |
+| Linux: `ERROR: neither jq nor python3 is installed` | Нужен любой из них: ими читаются и `config.json`, и ответ API |
 | Windows: антивирус блокирует запуск | Добавьте папку проекта в исключения; запускайте `.bat`/`.ps1` (исполняемые файлы проект не собирает) |
 
 Все запуски пишутся в `logs/unsplash-bg.log` — начинать диагностику стоит с него.
