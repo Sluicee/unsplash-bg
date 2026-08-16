@@ -1,6 +1,6 @@
 #!/bin/bash
 # Unsplash Background Changer - Linux
-# Uses config.json (same format as Windows). Requires: curl, jq.
+# Uses config.json (same format as Windows). Requires: curl, jq or python3.
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,33 +27,105 @@ log() {
 	echo "[$ts] $msg" >> "$LOG_FILE"
 }
 
+json_get_file() {
+	local path="$1"
+	local file="$2"
+	if command -v jq &>/dev/null; then
+		jq -r "$path" "$file" 2>/dev/null || echo ""
+	elif command -v python3 &>/dev/null; then
+		python3 - <<'PY' "$file" "$path"
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    for key in sys.argv[2].lstrip('.').split('.'):
+        if isinstance(data, dict) and key:
+            data = data.get(key, None)
+        else:
+            data = None
+            break
+    if data is None:
+        print("")
+    elif isinstance(data, bool):
+        print(str(data).lower())
+    else:
+        print(data)
+except Exception:
+    print("")
+PY
+	else
+		echo ""
+	fi
+}
+
+json_get_stdin() {
+	local path="$1"
+	if command -v jq &>/dev/null; then
+		jq -r "$path" 2>/dev/null || echo ""
+	elif command -v python3 &>/dev/null; then
+		python3 - <<'PY' "$path"
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    for key in sys.argv[1].lstrip('.').split('.'):
+        if isinstance(data, dict) and key:
+            data = data.get(key, None)
+        else:
+            data = None
+            break
+    if data is None:
+        print("")
+    elif isinstance(data, bool):
+        print(str(data).lower())
+    else:
+        print(data)
+except Exception:
+    print("")
+PY
+	else
+		echo ""
+	fi
+}
+
 # Load config if present
 if [[ -f "$CONFIG_PATH" ]]; then
-	if command -v jq &>/dev/null; then
-		ACCESS_KEY=$(jq -r '.unsplash.accessKey // ""' "$CONFIG_PATH")
-		API_URL=$(jq -r '.unsplash.apiUrl // "https://api.unsplash.com"' "$CONFIG_PATH")
-		CATEGORY=$(jq -r '.unsplash.defaultCategory // "nature"' "$CONFIG_PATH")
-		WIDTH=$(jq -r '.unsplash.defaultWidth // 1920' "$CONFIG_PATH")
-		HEIGHT=$(jq -r '.unsplash.defaultHeight // 1080' "$CONFIG_PATH")
-		STYLE=$(jq -r '.wallpaper.style // "fill"' "$CONFIG_PATH")
-		if path=$(jq -r '.download.tempPath // ""' "$CONFIG_PATH"); [[ -n "$path" && "$path" != "null" ]]; then
-			# expand $HOME if present in config
-			TEMP_PATH="${path//\$HOME/$HOME}"
-			TEMP_PATH="${TEMP_PATH//\$\{HOME\}/$HOME}"
-		fi
-		logfile_cfg=$(jq -r '.logging.logFile // ""' "$CONFIG_PATH")
-		if [[ -n "$logfile_cfg" && "$logfile_cfg" != "null" ]]; then
-			logfile_cfg="${logfile_cfg//\\\\/\/}"
-			LOG_FILE="${ROOT_DIR}/${logfile_cfg}"
-			LOG_DIR="$(dirname "$LOG_FILE")"
-		fi
-	else
-		log "WARNING: jq not installed. Using defaults. Install jq for config support."
+	ACCESS_KEY=$(json_get_file '.unsplash.accessKey' "$CONFIG_PATH")
+	API_URL=$(json_get_file '.unsplash.apiUrl' "$CONFIG_PATH")
+	CATEGORY=$(json_get_file '.unsplash.defaultCategory' "$CONFIG_PATH")
+	WIDTH=$(json_get_file '.unsplash.defaultWidth' "$CONFIG_PATH")
+	HEIGHT=$(json_get_file '.unsplash.defaultHeight' "$CONFIG_PATH")
+	STYLE=$(json_get_file '.wallpaper.style' "$CONFIG_PATH")
+	if path=$(json_get_file '.download.tempPath' "$CONFIG_PATH"); [[ -n "$path" && "$path" != "null" ]]; then
+		# expand $HOME if present in config
+		TEMP_PATH="${path//\$HOME/$HOME}"
+		TEMP_PATH="${TEMP_PATH//\$\{HOME\}/$HOME}"
+	fi
+	logfile_cfg=$(json_get_file '.logging.logFile' "$CONFIG_PATH")
+	if [[ -n "$logfile_cfg" && "$logfile_cfg" != "null" ]]; then
+		logfile_cfg="${logfile_cfg//\\/\/}"
+		LOG_FILE="${ROOT_DIR}/${logfile_cfg}"
+		LOG_DIR="$(dirname "$LOG_FILE")"
+	fi
+	if [[ -z "$API_URL" ]]; then
+		API_URL="https://api.unsplash.com"
+	fi
+	if [[ -z "$CATEGORY" ]]; then
+		CATEGORY="nature"
+	fi
+	if [[ -z "$WIDTH" ]]; then
+		WIDTH=1920
+	fi
+	if [[ -z "$HEIGHT" ]]; then
+		HEIGHT=1080
+	fi
+	if [[ -z "$STYLE" ]]; then
+		STYLE="fill"
+	fi
+	if ! command -v jq &>/dev/null && ! command -v python3 &>/dev/null; then
+		log "WARNING: jq and python3 are not installed. Using defaults. Install jq or python3 for config support."
 	fi
 else
 	log "WARNING: config.json not found at $CONFIG_PATH. Using defaults."
 fi
-
 if [[ -z "$ACCESS_KEY" ]]; then
 	log "ERROR: API key not configured. Create config.json from config.json.template and set unsplash.accessKey."
 	exit 1
@@ -68,14 +140,17 @@ log "Requesting random image: category=$CATEGORY, ${WIDTH}x${HEIGHT}"
 url="${API_URL}/photos/random?query=${CATEGORY}&orientation=landscape&w=${WIDTH}&h=${HEIGHT}"
 resp=$(curl -sS -H "Authorization: Client-ID ${ACCESS_KEY}" -H "Accept-Version: v1" "$url") || true
 
-if ! echo "$resp" | jq -e '.urls.raw' &>/dev/null; then
+image_url=$(echo "$resp" | json_get_stdin '.urls.raw')
+if [[ -z "$image_url" ]]; then
 	log "ERROR: Invalid API response. Check key and network."
-	echo "$resp" | jq -r '.errors[]? // .' 2>/dev/null || echo "$resp"
+	echo "$resp"
 	exit 1
 fi
 
-image_url=$(echo "$resp" | jq -r '.urls.raw')
-img_id=$(echo "$resp" | jq -r '.id // "unknown"')
+img_id=$(echo "$resp" | json_get_stdin '.id')
+if [[ -z "$img_id" ]]; then
+	img_id="unknown"
+fi
 log "Downloading image id=$img_id"
 
 if ! curl -sS -o "$FILE_PATH" "$image_url"; then
@@ -120,6 +195,18 @@ set_wallpaper() {
 				return 0
 				;;
 			*[Kk][Dd][Ee]*|*Plasma*)
+				if command -v qdbus &>/dev/null; then
+					local fillMode
+					case "$style" in
+						fill) fillMode=2 ;;    # Keep Proportions Crop
+						fit) fillMode=1 ;;     # Keep Proportions
+						stretch) fillMode=0 ;;  # Stretch
+						center) fillMode=4 ;;   # Centered
+						tile) fillMode=3 ;;     # Tile
+						*) fillMode=2 ;;
+					esac
+					qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "var allDesktops = desktops(); for (var i = 0; i < allDesktops.length; i++) { var d = allDesktops[i]; d.wallpaperPlugin = 'org.kde.image'; d.currentConfigGroup = Array('Wallpaper', 'org.kde.image', 'General'); d.writeConfig('Image', 'file://$abs'); d.writeConfig('FillMode', $fillMode); }" 2>/dev/null && { log "Wallpaper set (Plasma 5/6)"; return 0; }
+				fi
 				if command -v kwriteconfig6 &>/dev/null; then
 					kwriteconfig6 --file kwinrc --group org.kde.kwin.screensaver --key Image "file://$abs" 2>/dev/null
 					qdbus org.kde.KWin /KWin reconfigure 2>/dev/null
